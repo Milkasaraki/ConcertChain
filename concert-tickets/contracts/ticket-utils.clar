@@ -1,3 +1,4 @@
+;; ticket-utils.clar
 ;; Utility functions for the concert ticket marketplace
 
 ;; Import error constants from ticket-models
@@ -6,11 +7,8 @@
 (define-constant ERR-REFUND-ERROR (err u118))
 (define-constant ERR-REFUND-IN-PROGRESS (err u119))
 
-;; Import constants and models
-(use-trait event-model '.ticket-models.get-event-data)
-(use-trait ticket-model '.ticket-models.get-ticket-data)
-
-;; Import functions from ticket-models
+;; Import traits properly (remove the "." prefix and use proper trait definition)
+;; Import functions from ticket-models directly
 (define-read-only (get-event-data (event-id uint))
   (contract-call? .ticket-models get-event-data event-id)
 )
@@ -108,20 +106,22 @@
 )
 
 ;; Export utility functions
-(define-public (process-refund (event-id uint))
-  (initiate-refund event-id)
-)
-
-(define-public (validate-zones (zones (list 5 uint)) (max-zone-id uint))
-  (ok (validate-zone-allocations zones max-zone-id))
-)
-
-(define-public (calculate-refund-amount (event-id uint))
+(define-private (initiate-refund (event-id uint))
   (let
-    (
-      (event-data (unwrap! (get-event-data event-id) ERR-EVENT-NOT-FOUND))
-      (ticket-data (unwrap! (get-ticket-data event-id tx-sender) ERR-NO-TICKET-FOUND))
+    ((ticket-data (get-ticket-data event-id tx-sender)))
+    (if (is-some ticket-data)
+      (let 
+        ((ticket-details (unwrap-panic ticket-data)))
+        ;; Attempt the transfer with proper error handling
+        (match (as-contract (stx-transfer? (get ticket-price ticket-details) tx-sender tx-sender))
+          success (begin
+            ;; Modified to use contract-call instead of direct map access
+            (contract-call? .ticket-models delete-ticket event-id tx-sender)
+          )
+          error (err ERR-REFUND-ERROR)
+        )
+      )
+      (err ERR-REFUND-IN-PROGRESS)
     )
-    (ok (calculate-compensation event-data ticket-data (get allocated-zones event-data)))
   )
 )

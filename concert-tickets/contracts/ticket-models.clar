@@ -192,11 +192,11 @@
     (
       (event-data (unwrap! (get-event-data event-id) ERR-EVENT-NOT-FOUND))
     )
-    (map-set events
+    ;; Check that we have valid event data before proceeding
+    (ok (map-set events
       { event-id: event-id }
       (merge event-data { allocated-zones: zones })
-    )
-    (ok true)
+    ))
   )
 )
 

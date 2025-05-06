@@ -1,3 +1,4 @@
+;; concert-marketplace.clar
 ;; Main contract for concert ticket marketplace
 
 ;; Import constants and error codes from ticket-models
@@ -119,12 +120,26 @@
     (asserts! (get is-active event-data) ERR-EVENT-INACTIVE)
     (asserts! (< block-height (get end-block event-data)) ERR-CANNOT-CANCEL-EVENT)
     
+    ;; First update the event status
     (try! (contract-call? .ticket-models update-event-status
       event-id
       false
     ))
     
-    (try! (contract-call? .ticket-utils process-refund event-id))
+    ;; Get the ticket data for the current transaction sender
+    (let
+      ((ticket-data (get-ticket-data event-id tx-sender)))
+      (if (is-some ticket-data)
+        (let
+          ((ticket-details (unwrap-panic ticket-data)))
+          ;; Attempt the transfer with proper error handling
+          (try! (as-contract (stx-transfer? (get ticket-price ticket-details) tx-sender tx-sender)))
+          ;; Delete the ticket
+          (try! (contract-call? .ticket-models delete-ticket event-id tx-sender))
+        )
+        true
+      )
+    )
     
     (ok true)
   )
@@ -141,7 +156,34 @@
     (asserts! (> (len available-zone-ids) u0) ERR-NO-SEATS-AVAILABLE)
     (asserts! (<= (len available-zone-ids) u5) ERR-TOO-MANY-ZONES)
     
-    (asserts! (contract-call? .ticket-utils validate-zones available-zone-ids (len (get seating-zones event-data))) ERR-INVALID-ALLOCATION)
+    ;; Implement zone validation directly here instead of calling ticket-utils
+    (let
+      (
+        (zone-1 (element-at available-zone-ids u0))
+        (zone-2 (element-at available-zone-ids u1))
+        (zone-3 (element-at available-zone-ids u2))
+        (zone-4 (element-at available-zone-ids u3))
+        (zone-5 (element-at available-zone-ids u4))
+        (max-zone (len (get seating-zones event-data)))
+      )
+      (asserts! (and
+        (match zone-1
+          value (and (> value u0) (<= value max-zone))
+          true)
+        (match zone-2
+          value (and (> value u0) (<= value max-zone))
+          true)
+        (match zone-3
+          value (and (> value u0) (<= value max-zone))
+          true)
+        (match zone-4
+          value (and (> value u0) (<= value max-zone))
+          true)
+        (match zone-5
+          value (and (> value u0) (<= value max-zone))
+          true)
+      ) ERR-INVALID-ALLOCATION)
+    )
     
     (try! (contract-call? .ticket-models update-event-zones
       event-id
