@@ -1,9 +1,23 @@
-;; ticket-utils.clar
 ;; Utility functions for the concert ticket marketplace
 
+;; Import error constants from ticket-models
+(define-constant ERR-EVENT-NOT-FOUND (err u102))
+(define-constant ERR-NO-TICKET-FOUND (err u117))
+(define-constant ERR-REFUND-ERROR (err u118))
+(define-constant ERR-REFUND-IN-PROGRESS (err u119))
+
 ;; Import constants and models
-(use-trait event-model 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.ticket-models.get-event-data)
-(use-trait ticket-model 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.ticket-models.get-ticket-data)
+(use-trait event-model '.ticket-models.get-event-data)
+(use-trait ticket-model '.ticket-models.get-ticket-data)
+
+;; Import functions from ticket-models
+(define-read-only (get-event-data (event-id uint))
+  (contract-call? .ticket-models get-event-data event-id)
+)
+
+(define-read-only (get-ticket-data (event-id uint) (attendee principal))
+  (contract-call? .ticket-models get-ticket-data event-id attendee)
+)
 
 ;; Helper functions
 (define-private (calculate-compensation (event-data { organizer: principal, event-info: (string-ascii 256), seating-zones: (list 10 (string-ascii 64)), total-sales: uint, is-active: bool, allocated-zones: (list 5 uint), end-block: uint, pricing-model: (string-ascii 20), zone-prices: (optional (list 10 uint)) }) (ticket-data { zone-number: uint, ticket-price: uint }) (allocated-zone-ids (list 5 uint)))
@@ -82,7 +96,8 @@
     (match ticket-data
       ticket-details (match (as-contract (stx-transfer? (get ticket-price ticket-details) tx-sender tx-sender))
         success (begin
-          (map-delete tickets { event-id: event-id, attendee: tx-sender })
+          ;; Modified to use contract-call instead of direct map access
+          (contract-call? .ticket-models delete-ticket event-id tx-sender)
           (ok true)
         )
         error ERR-REFUND-ERROR
